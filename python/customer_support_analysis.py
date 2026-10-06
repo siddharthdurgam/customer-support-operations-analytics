@@ -30,13 +30,22 @@ def normalize_text(value: object) -> object:
 
 
 def load_data(path: Path) -> pd.DataFrame:
-    """Load the raw support-ticket dataset."""
+    """Load the raw support-ticket dataset and normalize column headers."""
     if not path.exists():
         raise FileNotFoundError(
             f"Input dataset not found: {path}. "
             "Place the raw CSV in data/raw/."
         )
-    return pd.read_csv(path)
+
+    df = pd.read_csv(path, encoding="utf-8-sig")
+
+    # Remove BOMs and accidental leading/trailing whitespace from headers.
+    df.columns = [
+        str(column).replace("\ufeff", "").strip()
+        for column in df.columns
+    ]
+
+    return df
 
 
 def clean_data(df: pd.DataFrame) -> pd.DataFrame:
@@ -51,7 +60,10 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
     }
     missing = required_columns - set(df.columns)
     if missing:
-        raise ValueError(f"Missing required columns: {sorted(missing)}")
+        raise ValueError(
+            f"Missing required columns: {sorted(missing)}. "
+            f"Available columns: {list(df.columns)}"
+        )
 
     cleaned = df.copy()
 
@@ -114,24 +126,26 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
     cleaned["Resolution Days"] = cleaned["Resolution Hours"] / 24
 
     # Keep the most complete record when duplicate ticket IDs exist.
-    if "Ticket ID" in cleaned.columns:
-        completeness_columns = [
-            column for column in [
-                "City",
-                "Customer Type",
-                "Support Channel",
-                "Customer Satisfaction Rating",
-                "Support Agent",
-            ]
-            if column in cleaned.columns
+    completeness_columns = [
+        column for column in [
+            "City",
+            "Customer Type",
+            "Support Channel",
+            "Customer Satisfaction Rating",
+            "Support Agent",
         ]
-        if completeness_columns:
-            cleaned["_completeness_score"] = cleaned[completeness_columns].notna().sum(axis=1)
-            cleaned = (
-                cleaned.sort_values(["Ticket ID", "_completeness_score"], ascending=[True, False])
-                .drop_duplicates(subset="Ticket ID", keep="first")
-                .drop(columns="_completeness_score")
+        if column in cleaned.columns
+    ]
+    if completeness_columns:
+        cleaned["_completeness_score"] = cleaned[completeness_columns].notna().sum(axis=1)
+        cleaned = (
+            cleaned.sort_values(
+                ["Ticket ID", "_completeness_score"],
+                ascending=[True, False],
             )
+            .drop_duplicates(subset="Ticket ID", keep="first")
+            .drop(columns="_completeness_score")
+        )
 
     return cleaned
 

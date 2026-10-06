@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Power BI local/cache files
+*.pbi/cache.abf
+*.pbi/localsettings.json
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Local exports
+*.log

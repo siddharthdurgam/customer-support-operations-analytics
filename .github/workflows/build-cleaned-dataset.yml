@@ -1,0 +1,45 @@
+name: Build Cleaned Dataset
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'data/customer_support_operations_raw.csv'
+      - 'python/customer_support_analysis.py'
+      - '.github/workflows/build-cleaned-dataset.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  clean-data:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install pandas
+        run: pip install pandas
+
+      - name: Prepare input dataset
+        run: |
+          mkdir -p data/raw
+          cp data/customer_support_operations_raw.csv data/raw/customer_support_tickets.csv
+
+      - name: Run cleaning pipeline
+        run: python python/customer_support_analysis.py
+
+      - name: Commit cleaned dataset
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add data/processed/cleaned_support_tickets.csv
+          git commit -m 'Generate cleaned customer support dataset' || echo 'No changes to commit'
+          git push

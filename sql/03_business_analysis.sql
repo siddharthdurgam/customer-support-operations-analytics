@@ -1,85 +1,66 @@
-/*
-Project: Customer Support Operations Analytics
-File: 03_business_analysis.sql
-Purpose: Answer management-level business questions.
-SQL Dialect: MySQL 8+
-*/
+/*=============================================================================
+  Project : Customer Support Operations Analytics
+  File    : 04_business_queries.sql
+  Author  : D.Siddharth Patel
 
-/* ============================================================
-   1. Monthly Ticket Trend
-   ============================================================ */
+  Purpose:
+  Business-focused SQL queries used to answer operational questions and
+  support the Power BI dashboard.
+=============================================================================*/
+
+/* 1. Monthly Ticket Trend */
 SELECT
-    YEAR(created_date) AS year_no,
     MONTH(created_date) AS month_no,
     MONTHNAME(created_date) AS month_name,
-    COUNT(*) AS total_tickets
+    COUNT(*) AS total_ticket
 FROM c_s_final
-GROUP BY YEAR(created_date), MONTH(created_date), MONTHNAME(created_date)
-ORDER BY year_no, month_no;
+GROUP BY MONTH(created_date), MONTHNAME(created_date)
+ORDER BY month_no;
 
-
-/* ============================================================
-   2. Month-over-Month Ticket Growth
-   ============================================================ */
-WITH monthly_tickets AS (
+/* 2. Month-over-Month Ticket Growth */
+WITH monthly_ticket AS (
     SELECT
-        YEAR(created_date) AS year_no,
         MONTH(created_date) AS month_no,
         MONTHNAME(created_date) AS month_name,
-        COUNT(*) AS total_tickets
+        COUNT(*) AS total_ticket
     FROM c_s_final
-    GROUP BY YEAR(created_date), MONTH(created_date), MONTHNAME(created_date)
-),
-with_previous AS (
+    GROUP BY MONTH(created_date), MONTHNAME(created_date)
+), previous_month AS (
     SELECT
-        *,
-        LAG(total_tickets) OVER (ORDER BY year_no, month_no) AS previous_month_tickets
-    FROM monthly_tickets
+        month_no,
+        month_name,
+        total_ticket,
+        LAG(total_ticket) OVER (ORDER BY month_no) AS previous_month_ticket
+    FROM monthly_ticket
 )
 SELECT
-    year_no,
     month_no,
     month_name,
-    total_tickets,
-    previous_month_tickets,
-    total_tickets - previous_month_tickets AS ticket_change,
-    ROUND(
-        (total_tickets - previous_month_tickets) * 100.0
-        / NULLIF(previous_month_tickets, 0),
-        2
-    ) AS percentage_change
-FROM with_previous
-ORDER BY year_no, month_no;
+    total_ticket,
+    previous_month_ticket,
+    total_ticket - previous_month_ticket AS ticket_change,
+    ROUND((total_ticket - previous_month_ticket) * 100.0 / NULLIF(previous_month_ticket, 0), 2) AS percentage_change
+FROM previous_month;
 
-
-/* ============================================================
-   3. Top Cities by Ticket Volume
-   ============================================================ */
+/* 3. Top 5 Cities by Ticket Volume */
 WITH city_summary AS (
-    SELECT city, COUNT(*) AS total_tickets
+    SELECT city, COUNT(*) AS total_ticket
     FROM c_s_final
     GROUP BY city
-),
-ranked_cities AS (
-    SELECT
-        city,
-        total_tickets,
-        RANK() OVER (ORDER BY total_tickets DESC) AS city_rank
-    FROM city_summary
 )
-SELECT *
-FROM ranked_cities
-WHERE city_rank <= 5
-ORDER BY city_rank;
+SELECT
+    city,
+    total_ticket,
+    RANK() OVER (ORDER BY total_ticket DESC) AS city_rank
+FROM city_summary
+ORDER BY city_rank
+LIMIT 5;
 
-
-/* ============================================================
-   4. Support Agent Performance
-   ============================================================ */
-WITH agent_performance AS (
+/* 4. Support Agent Performance Ranking */
+WITH support_agent_performance AS (
     SELECT
         support_agent,
-        COUNT(*) AS tickets_handled,
+        COUNT(*) AS ticket_handled,
         ROUND(AVG(satisfaction_rating), 2) AS avg_satisfaction,
         ROUND(AVG(resolution_days), 2) AS avg_resolution_days
     FROM c_s_final
@@ -87,57 +68,42 @@ WITH agent_performance AS (
 )
 SELECT
     support_agent,
-    tickets_handled,
+    ticket_handled,
     avg_satisfaction,
     avg_resolution_days,
     RANK() OVER (
-        ORDER BY avg_satisfaction DESC,
-                 avg_resolution_days ASC,
-                 tickets_handled DESC
+        ORDER BY avg_satisfaction DESC, avg_resolution_days ASC, ticket_handled DESC
     ) AS performance_rank
-FROM agent_performance
+FROM support_agent_performance
 ORDER BY performance_rank;
 
-
-/* ============================================================
-   5. Monthly Customer Satisfaction Trend
-   ============================================================ */
+/* 5. Monthly Satisfaction Trend */
 WITH satisfaction_trend AS (
     SELECT
-        YEAR(resolved_date) AS year_no,
         MONTH(resolved_date) AS month_no,
         MONTHNAME(resolved_date) AS month_name,
-        AVG(satisfaction_rating) AS avg_rating
+        AVG(satisfaction_rating) AS avg_rating,
+        LAG(AVG(satisfaction_rating)) OVER (ORDER BY MONTH(resolved_date)) AS previous_month_rating
     FROM c_s_final
-    WHERE resolved_date IS NOT NULL
-    GROUP BY YEAR(resolved_date), MONTH(resolved_date), MONTHNAME(resolved_date)
-),
-with_previous AS (
-    SELECT
-        *,
-        LAG(avg_rating) OVER (ORDER BY year_no, month_no) AS previous_month_rating
-    FROM satisfaction_trend
+    GROUP BY MONTH(resolved_date), MONTHNAME(resolved_date)
 )
 SELECT
-    year_no,
     month_no,
     month_name,
     ROUND(avg_rating, 2) AS avg_rating,
     ROUND(previous_month_rating, 2) AS previous_month_rating,
-    ROUND(avg_rating - previous_month_rating, 2) AS rating_change
-FROM with_previous
-ORDER BY year_no, month_no;
+    ROUND(avg_rating - previous_month_rating, 2) AS rating_change,
+    ROUND((avg_rating - previous_month_rating) * 100 / NULLIF(previous_month_rating, 0), 2) AS mom_change_percent
+FROM satisfaction_trend
+ORDER BY month_no;
 
-
-/* ============================================================
-   6. Running Total of Tickets
-   ============================================================ */
+/* 6. Running Total of Tickets */
 WITH monthly_tickets AS (
     SELECT
         YEAR(created_date) AS year_no,
         MONTH(created_date) AS month_no,
         MONTHNAME(created_date) AS month_name,
-        COUNT(*) AS total_tickets
+        COUNT(*) AS total_ticket
     FROM c_s_final
     GROUP BY YEAR(created_date), MONTH(created_date), MONTHNAME(created_date)
 )
@@ -145,50 +111,35 @@ SELECT
     year_no,
     month_no,
     month_name,
-    total_tickets,
-    SUM(total_tickets) OVER (ORDER BY year_no, month_no) AS running_total_tickets
+    total_ticket,
+    SUM(total_ticket) OVER (ORDER BY year_no, month_no) AS running_total_ticket
 FROM monthly_tickets
 ORDER BY year_no, month_no;
 
-
-/* ============================================================
-   7. Resolution Efficiency Trend
-   ============================================================ */
+/* 7. Resolution Efficiency Trend */
 WITH efficiency_trend AS (
     SELECT
         YEAR(created_date) AS year_no,
         MONTH(created_date) AS month_no,
         MONTHNAME(created_date) AS month_name,
-        AVG(resolution_days) AS avg_resolution_days
+        AVG(resolution_days) AS avg_days_to_resolve
     FROM c_s_final
-    WHERE resolution_days IS NOT NULL
     GROUP BY YEAR(created_date), MONTH(created_date), MONTHNAME(created_date)
-),
-with_previous AS (
+), previous_month AS (
     SELECT
-        *,
-        LAG(avg_resolution_days) OVER (ORDER BY year_no, month_no) AS previous_month_avg
+        year_no,
+        month_no,
+        month_name,
+        avg_days_to_resolve,
+        LAG(avg_days_to_resolve) OVER (ORDER BY year_no, month_no) AS previous_month_avg
     FROM efficiency_trend
 )
 SELECT
     year_no,
-    month_no,
     month_name,
-    ROUND(avg_resolution_days, 2) AS avg_resolution_days,
+    ROUND(avg_days_to_resolve, 2) AS avg_days_to_resolve,
     ROUND(previous_month_avg, 2) AS previous_month_avg,
-    ROUND(avg_resolution_days - previous_month_avg, 2) AS change_in_avg_days
-FROM with_previous
+    ROUND(avg_days_to_resolve - previous_month_avg, 2) AS change_in_avg,
+    ROUND((avg_days_to_resolve - previous_month_avg) * 100 / NULLIF(previous_month_avg, 0), 2) AS mom_efficiency
+FROM previous_month
 ORDER BY year_no, month_no;
-
-
-/* ============================================================
-   8. Open Tickets by Issue Category
-   ============================================================ */
-SELECT
-    issue_category,
-    COUNT(*) AS open_tickets,
-    ROUND(COUNT(*) * 100.0 / SUM(COUNT(*)) OVER (), 2) AS open_ticket_percentage
-FROM c_s_final
-WHERE ticket_status = 'OPEN'
-GROUP BY issue_category
-ORDER BY open_tickets DESC;
